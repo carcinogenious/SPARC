@@ -1,0 +1,26 @@
+# PlatformIO
+.pio/
+.vscode/
+lib/*/build/
+
+# MATLAB
+*.asv
+*.m~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+*.o
+*.elf
+*.hex
+*.bin
+
+# IDE
+*.swp
+*.swo
+*~
+
+# Secrets
+credentials.h
