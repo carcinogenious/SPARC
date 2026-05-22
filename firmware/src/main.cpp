@@ -8,6 +8,9 @@
 #include <SSD1306Wire.h>
 #include <LoRa.h>
 
+// SPARC sensor drivers (firmware/lib/sensors/)
+#include <bmp388.h>
+
 // ── Pin Definitions (Heltec V3) ──
 #define PIN_ARM_BTN       2     // Latching push button
 #define PIN_BUZZER        12
@@ -92,10 +95,24 @@ void setup() {
     Serial.println(F("SPARC Flight Controller v3.0"));
     Serial.println(F("Heltec WiFi LoRa 32 V3 — TVC enabled"));
 
-    // TODO: init BMP388, MPU6050, VL53L1X
+    // ── Sensor Initialization ──
+    // bmp388::init() also (re)starts the shared I2C bus, so I2C sensor
+    // drivers added below can assume the bus is already up.
+    bool bmpOk = bmp388::init(PIN_I2C_SDA, PIN_I2C_SCL);
+    Serial.print(F("BMP388 altimeter: "));
+    Serial.println(bmpOk ? F("OK") : F("FAIL"));
+    // TODO: bool mpuOk = mpu6050::init();   — 6-axis IMU (attitude)
+    // TODO: bool tofOk = vl53l1x::init();   — ToF rangefinder (low alt)
+
+    // Pre-flight sensor status on the OLED
+    oled.clear();
+    oled.drawString(0, 0, "SPARC v3.0");
+    oled.drawString(0, 14, String("BMP388  ") + (bmpOk ? "OK" : "FAIL"));
+    // TODO: MPU6050 status at y=26, VL53L1X at y=38
+    oled.display();
+
     // TODO: init SD card on HSPI (PIN_SD_CS/MOSI/MISO/SCK)
     // TODO: init LoRa (SX1262, 915MHz)
-    // TODO: display sensor status on OLED
     // TODO: set state = IDLE
 }
 
@@ -106,8 +123,21 @@ void loop() {
     if (now - lastLoop < 20) return;
     lastLoop = now;
 
-    // TODO: 
     // 1. Read all sensors (BMP388, MPU6050, VL53L1X)
+    float altBaro = bmp388::readAltitude();   // meters AGL, NAN on I2C failure
+    // TODO: read MPU6050 (attitude) and VL53L1X (low-altitude range)
+
+    // Bench-test scaffold: stream baro altitude at ~2 Hz so the sensor can be
+    // verified standalone. Remove once fusion + logging consume altBaro.
+    static uint8_t dbgCount = 0;
+    if (++dbgCount >= 25) {
+        dbgCount = 0;
+        Serial.print(F("alt_baro = "));
+        Serial.println(isnan(altBaro) ? String("SENSOR FAIL")
+                                      : String(altBaro, 2) + " m");
+    }
+
+    // TODO:
     // 2. Run sensor fusion (altitude + attitude)
     // 3. Run state machine transitions
     // 4. Run throttle PID (altitude/velocity → ball valve servo)
