@@ -10,6 +10,7 @@
 
 // SPARC sensor drivers (firmware/lib/sensors/)
 #include <bmp388.h>
+#include <mpu6050.h>
 
 // ── Pin Definitions (Heltec V3) ──
 #define PIN_ARM_BTN       2     // Latching push button
@@ -101,14 +102,19 @@ void setup() {
     bool bmpOk = bmp388::init(PIN_I2C_SDA, PIN_I2C_SCL);
     Serial.print(F("BMP388 altimeter: "));
     Serial.println(bmpOk ? F("OK") : F("FAIL"));
-    // TODO: bool mpuOk = mpu6050::init();   — 6-axis IMU (attitude)
+    // mpu6050::init() spends ~1 s capturing gyro static bias — keep the
+    // rocket still through boot or attitude will drift on the pad.
+    bool mpuOk = mpu6050::init(PIN_I2C_SDA, PIN_I2C_SCL);
+    Serial.print(F("MPU6050 IMU:      "));
+    Serial.println(mpuOk ? F("OK") : F("FAIL"));
     // TODO: bool tofOk = vl53l1x::init();   — ToF rangefinder (low alt)
 
     // Pre-flight sensor status on the OLED
     oled.clear();
     oled.drawString(0, 0, "SPARC v3.0");
     oled.drawString(0, 14, String("BMP388  ") + (bmpOk ? "OK" : "FAIL"));
-    // TODO: MPU6050 status at y=26, VL53L1X at y=38
+    oled.drawString(0, 26, String("MPU6050 ") + (mpuOk ? "OK" : "FAIL"));
+    // TODO: VL53L1X status at y=38
     oled.display();
 
     // TODO: init SD card on HSPI (PIN_SD_CS/MOSI/MISO/SCK)
@@ -125,16 +131,29 @@ void loop() {
 
     // 1. Read all sensors (BMP388, MPU6050, VL53L1X)
     float altBaro = bmp388::readAltitude();   // meters AGL, NAN on I2C failure
-    // TODO: read MPU6050 (attitude) and VL53L1X (low-altitude range)
+    mpu6050::Reading imu = mpu6050::read();   // m/s² and rad/s, imu.ok on read
+    // TODO: read VL53L1X (low-altitude range)
 
-    // Bench-test scaffold: stream baro altitude at ~2 Hz so the sensor can be
-    // verified standalone. Remove once fusion + logging consume altBaro.
+    // Bench-test scaffold: stream raw sensor values at ~2 Hz so each driver
+    // can be verified standalone. Remove once fusion + logging consume them.
     static uint8_t dbgCount = 0;
     if (++dbgCount >= 25) {
         dbgCount = 0;
-        Serial.print(F("alt_baro = "));
-        Serial.println(isnan(altBaro) ? String("SENSOR FAIL")
-                                      : String(altBaro, 2) + " m");
+        Serial.print(F("alt="));
+        Serial.print(isnan(altBaro) ? String("FAIL") : String(altBaro, 2) + "m");
+        Serial.print(F("  accel(m/s2)="));
+        if (imu.ok) {
+            Serial.print(imu.accel_x, 2); Serial.print(',');
+            Serial.print(imu.accel_y, 2); Serial.print(',');
+            Serial.print(imu.accel_z, 2);
+            Serial.print(F("  gyro(rad/s)="));
+            Serial.print(imu.gyro_x, 3); Serial.print(',');
+            Serial.print(imu.gyro_y, 3); Serial.print(',');
+            Serial.print(imu.gyro_z, 3);
+        } else {
+            Serial.print(F("FAIL"));
+        }
+        Serial.println();
     }
 
     // TODO:

@@ -1,5 +1,7 @@
 # PlatformIO
 .pio/
+.pioenvs/
+.piolibdeps/
 .vscode/
 lib/*/build/
 
