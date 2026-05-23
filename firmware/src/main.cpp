@@ -11,6 +11,7 @@
 // SPARC sensor drivers (firmware/lib/sensors/)
 #include <bmp388.h>
 #include <mpu6050.h>
+#include <tof.h>
 
 // ── Pin Definitions (Heltec V3) ──
 #define PIN_ARM_BTN       2     // Latching push button
@@ -107,14 +108,16 @@ void setup() {
     bool mpuOk = mpu6050::init(PIN_I2C_SDA, PIN_I2C_SCL);
     Serial.print(F("MPU6050 IMU:      "));
     Serial.println(mpuOk ? F("OK") : F("FAIL"));
-    // TODO: bool tofOk = vl53l1x::init();   — ToF rangefinder (low alt)
+    bool tofOk = tof::init(PIN_I2C_SDA, PIN_I2C_SCL);
+    Serial.print(F("VL53L1X ToF:      "));
+    Serial.println(tofOk ? F("OK") : F("FAIL"));
 
     // Pre-flight sensor status on the OLED
     oled.clear();
     oled.drawString(0, 0, "SPARC v3.0");
     oled.drawString(0, 14, String("BMP388  ") + (bmpOk ? "OK" : "FAIL"));
     oled.drawString(0, 26, String("MPU6050 ") + (mpuOk ? "OK" : "FAIL"));
-    // TODO: VL53L1X status at y=38
+    oled.drawString(0, 38, String("VL53L1X ") + (tofOk ? "OK" : "FAIL"));
     oled.display();
 
     // TODO: init SD card on HSPI (PIN_SD_CS/MOSI/MISO/SCK)
@@ -132,7 +135,12 @@ void loop() {
     // 1. Read all sensors (BMP388, MPU6050, VL53L1X)
     float altBaro = bmp388::readAltitude();   // meters AGL, NAN on I2C failure
     mpu6050::Reading imu = mpu6050::read();   // m/s² and rad/s, imu.ok on read
-    // TODO: read VL53L1X (low-altitude range)
+    // ToF needs the IMU's gravity vector to project the slant range onto
+    // the true vertical. Pass zeros (which yield ok=false) if the IMU
+    // read failed so a stale tilt correction can't poison the altitude.
+    tof::Reading rng = imu.ok
+        ? tof::read(imu.accel_x, imu.accel_y, imu.accel_z)
+        : tof::read(0.0f, 0.0f, 0.0f);
 
     // Bench-test scaffold: stream raw sensor values at ~2 Hz so each driver
     // can be verified standalone. Remove once fusion + logging consume them.
@@ -152,6 +160,16 @@ void loop() {
             Serial.print(imu.gyro_z, 3);
         } else {
             Serial.print(F("FAIL"));
+        }
+        Serial.print(F("  tof_slant="));
+        Serial.print(isnan(rng.range_m) ? String("FAIL")
+                                        : String(rng.range_m, 3) + "m");
+        if (rng.ok) {
+            Serial.print(F("  tof_vert="));
+            Serial.print(rng.vertical_m, 3);
+            Serial.print(F("m  tilt="));
+            Serial.print(rng.tilt_rad * 57.2958f, 1);
+            Serial.print(F("deg"));
         }
         Serial.println();
     }
