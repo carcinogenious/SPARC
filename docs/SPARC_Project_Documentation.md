@@ -176,30 +176,31 @@ Brass Pipe Cap Nozzle (2.0-2.5mm drilled orifice, mounted in TVC gimbal)
 | GPIO | Function |
 |------|----------|
 | 2 | Arm/launch push button (latching, INPUT_PULLUP) |
-| 38 | Buzzer |
-| 37 | Status LED |
-| 5 | Throttle servo PWM (MG996R → ball valve) |
-| 4 | TVC pitch servo PWM (MG90S) |
-| 3 | TVC yaw servo PWM (MG90S) |
-| 7 | I2C SDA (BMP388 + MPU6050 + VL53L1X) |
-| 6 | I2C SCL |
-| 34 | SD card CS |
-| 48 | SD card MOSI |
-| 47 | SD card MISO |
-| 33 | SD card SCK |
+| 19 | Buzzer |
+| 20 | Status LED |
+| 47 | Throttle servo PWM (MG996R → ball valve) |
+| 48 | TVC pitch servo PWM (MG90S #1) |
+| 3 | TVC yaw servo PWM (MG90S #2) |
+| 41 | I2C SDA (BMP388 + MPU6050 + VL53L1X) |
+| 42 | I2C SCL |
 | 1 | Battery voltage divider (ADC) |
+| 26 | Spare (available; freed because LoRa is unused) |
+| — | OLED SSD1306: on-board (SDA_OLED/SCL_OLED/RST_OLED, Heltec BSP); I2C 0x3C on Wire1 |
+| — | Telemetry: WiFi SoftAP + UDP — no SD card, LoRa radio left disabled |
 
-**Reserved pins (Heltec V3 internal / not exposed — do not use):**
-- GPIO 8, 9, 10, 11, 12, 13, 14: SX1262 LoRa internal wiring
-- GPIO 41, 42: not broken out on the V3 headers
+**Reserved pins (Heltec V3 — do not use for external hardware):**
+- GPIO 6, 7: ESP32-S3FN8 internal SPI flash — reassigning bricks the MCU
+- GPIO 8–14: on-board SX1262 LoRa SPI (not broken out)
+- GPIO 26–32: SPI-flash interface (26 usable as a spare only; 27–32 off-limits)
+- GPIO 0, 45, 46: strapping/boot pins
 - SDA_OLED / SCL_OLED / RST_OLED: on-board OLED pins (Heltec BSP)
 
 ### Servo Summary
 
 | Servo | Purpose | Pin | Range | Torque |
 |-------|---------|-----|-------|--------|
-| MG996R | Ball valve throttle | GPIO 5 | 0°-90° | 12 kg·cm @ 6V |
-| MG90S #1 | TVC pitch | GPIO 4 | 78°-102° (±12°) | 2 kg·cm |
+| MG996R | Ball valve throttle | GPIO 47 | 0°-90° | 12 kg·cm @ 6V |
+| MG90S #1 | TVC pitch | GPIO 48 | 78°-102° (±12°) | 2 kg·cm |
 | MG90S #2 | TVC yaw | GPIO 3 | 78°-102° (±12°) | 2 kg·cm |
 
 ---
@@ -297,11 +298,11 @@ roll  = 0.98 * (roll_prev  + gyro_y * dt) + 0.02 * atan2(accel_y, sqrt(accel_x²
 ## 6. Build & Testing Procedures
 
 ### Phase 1: Sensor Validation (breadboard)
-1. Wire BMP388 + MPU6050 + VL53L1X to Heltec ESP32 on breadboard (I2C: SDA=GPIO 7, SCL=GPIO 6)
+1. Wire BMP388 + MPU6050 + VL53L1X to Heltec ESP32 on breadboard (I2C: SDA=GPIO 41, SCL=GPIO 42)
 2. Verify each sensor individually on Serial Monitor
 3. Confirm I2C addresses: BMP388=0x76, MPU6050=0x68, VL53L1X=0x29, OLED=0x3C
-4. Add SD card module (CS=34, MOSI=48, MISO=47, SCK=33)
-5. Verify 50Hz CSV logging to SD card
+4. Bring up WiFi telemetry (SoftAP "SPARC-Telemetry"); join from a laptop
+5. Verify the 50Hz UDP JSON stream (`nc -ul 4210`)
 
 ### Phase 2: MATLAB Simulation
 1. Run `sparc_tvc_sim.m` in MATLAB Online
@@ -311,8 +312,8 @@ roll  = 0.98 * (roll_prev  + gyro_y * dt) + 0.02 * atan2(accel_y, sqrt(accel_x²
 5. Record final gains → paste into firmware constants
 
 ### Phase 3: Servo & Actuator Testing (breadboard)
-1. Connect MG996R to GPIO 5, verify 0-90° sweep
-2. Connect MG90S ×2 to GPIO 4/3, verify ±12° from center (78°-102°)
+1. Connect MG996R to GPIO 47, verify 0-90° sweep
+2. Connect MG90S ×2 to GPIO 48/3, verify ±12° from center (78°-102°)
 3. Wire 2S LiPo → BEC → breadboard, verify 5V stable under 3A peak servo load
 4. Test ball valve actuation: servo 0°=closed, 90°=open, verify smooth motion via linkage
 5. Test gimbal articulation: both axes sweep smoothly, pushrods don't bind
@@ -338,8 +339,8 @@ roll  = 0.98 * (roll_prev  + gyro_y * dt) + 0.02 * atan2(accel_y, sqrt(accel_x²
 1. Implement complete state machine (IDLE → SAFE)
 2. Integrate dual PID with MATLAB-tuned gains
 3. Test state transitions by hand-moving breadboard
-4. Verify SD logging captures all fields at 50Hz
-5. Test LoRa telemetry: second Heltec board receives real-time data
+4. Verify WiFi telemetry streams all fields at 50Hz (recorded ground-side)
+5. Test the downlink: a laptop on the SoftAP receives the real-time UDP stream
 6. Verify all safety cutoffs trigger correctly
 
 ### Phase 7: Rocket Integration
@@ -350,7 +351,7 @@ roll  = 0.98 * (roll_prev  + gyro_y * dt) + 0.02 * atan2(accel_y, sqrt(accel_x²
 5. Weight check: verify liftoff mass matches predictions
 
 ### Phase 8: Flight Testing
-1. **Tethered flight**: fishing line to stake, 5ft max. Verify launch detect, state transitions, TVC actuation. Pull SD card, review data.
+1. **Tethered flight**: fishing line to stake, 5ft max. Verify launch detect, state transitions, TVC actuation. Review the recorded telemetry stream.
 2. **Low-pressure hops**: short bursts, verify stability. Review data after EVERY attempt.
 3. **Full hover**: incrementally increase hover duration. Target: stable 5ft hold for 4+ seconds.
 4. **Always have recovery ready**: streamer/parachute for early flights before hover is proven.
