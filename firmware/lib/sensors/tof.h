@@ -12,16 +12,27 @@
 namespace tof {
 
 struct Reading {
-    float range_m;          // slant range from sensor face along the rocket body z-axis
-    float vertical_m;       // tilt-corrected altitude above the ground (range * cos(tilt))
+    float range_m;          // slant range RISEN from launch (raw range minus the boot baseline)
+    float vertical_m;       // tilt-corrected height above launch (range_m * cos(tilt))
     float tilt_rad;         // tilt angle used for the correction (0 = perfectly upright)
-    bool ok;                 // false on I2C timeout, invalid status, or out-of-range
+    bool ok;                 // tilt-corrected vertical_m is valid — needs a usable IMU
+                             //   gravity vector, so this is NOT a sensor-health signal
+    bool sensor_ok;          // the ToF itself is responding on I2C this cycle. Fully
+                             //   independent of the IMU and of range quality — use this
+                             //   (not ok) for the status display. Self-clears if the
+                             //   sensor stops answering.
 };
 
 // Initializes the VL53L1X on the shared I2C bus in long-range continuous
 // mode (~4 m max) at the 50 Hz control-loop rate. Returns false if the
 // sensor is not found.
-bool init(uint8_t sdaPin = 41, uint8_t sclPin = 42);
+bool init(uint8_t sdaPin = 7, uint8_t sclPin = 6);
+
+// Captures the resting slant range as the launch zero (the sensor's standoff
+// above the pad). Samples until the range stabilizes or timeoutMs elapses —
+// hold the rocket still. Returns true if it stabilized; on timeout it still
+// sets a best-effort baseline and returns false. Call once after init().
+bool captureBaseline(unsigned long timeoutMs = 10000);
 
 // Reads the latest slant range and combines it with the IMU's gravity
 // vector (accel_x/y/z, m/s²) to compute the true vertical altitude.

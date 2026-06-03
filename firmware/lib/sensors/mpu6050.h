@@ -16,7 +16,7 @@ struct Reading {
 // Initializes the MPU6050 on the shared I2C bus and captures the gyro
 // static bias by averaging ~1 s of readings — the rocket must be at rest
 // on the pad during boot. Returns false if the sensor is not found.
-bool init(uint8_t sdaPin = 41, uint8_t sclPin = 42);
+bool init(uint8_t sdaPin = 7, uint8_t sclPin = 6);
 
 // Single I2C transaction reading all 6 axes. ok=false on read failure.
 Reading read();
