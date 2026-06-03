@@ -8,15 +8,16 @@ SPARC (Student Propulsive Autonomous Rocketry Challenge) is a CO₂-powered rock
 - **Proportional throttle** — MG996R servo actuates a stainless ball valve for 0-100% flow control
 - **2-axis TVC** — Nozzle mounted in a 3D-printed gimbal, driven by two MG90S servos via pushrods, connected to the valve by a flexible braided PTFE hose
 - **Dual PID** — One loop for altitude/throttle, one for attitude/TVC
-- **Full sensor suite** — BMP388 + MPU6050 + VL53L1X + SD logging + LoRa telemetry
+- **Full sensor suite** — BMP388 + MPU6050 + VL53L1X + WiFi telemetry/logging
 
 ## Hardware
 
 ### Microcontroller
-- **Heltec WiFi LoRa 32 V3** (ESP32-S3, 240 MHz dual-core, 8MB flash, 320KB SRAM)
-- Built-in SX1262 LoRa radio (915MHz) — no separate telemetry module needed
+- **Heltec WiFi LoRa 32 V3** (ESP32-S3FN8, 240 MHz dual-core, 8MB flash, 320KB SRAM)
+- Built-in WiFi — used as a SoftAP for live telemetry/logging to a ground-station laptop
 - Built-in 0.96" OLED display — pre-flight status, sensor checks, state display on pad
-- Built-in WiFi + Bluetooth — firmware updates, ground station data download
+- Built-in SX1262 LoRa radio (915MHz) is present but **not used** — enabling it locks
+  GPIO 19/20/26 (its internal SPI), which are needed for buzzer/LED/spare
 - 3.3V logic — all sensors are compatible
 - Abundant GPIO + hardware PWM channels for 3 servos
 - Use ESP32Servo library (not arduino Servo)
@@ -27,7 +28,7 @@ SPARC (Student Propulsive Autonomous Rocketry Challenge) is a CO₂-powered rock
 - **TOF400C VL53L1X** (addr 0x29): Time-of-flight laser rangefinder, ±1mm accuracy to 4m, 50Hz max. Mount facing downward.
 
 ### Telemetry (built into flight computer)
-- **SX1262 LoRa** (on-board, 915MHz): Real-time downlink of altitude, attitude, state, servo positions during flight. Ground station = second Heltec board or any SX1262 receiver.
+- **WiFi SoftAP + UDP** (built-in ESP32-S3 radio): Real-time downlink of altitude, attitude, state, servo positions during flight. The board hosts AP "SPARC-Telemetry"; a ground-station laptop joins and receives the JSON stream (`nc -ul 4210`). No SD card — all flight data streams over WiFi, so there is no card to pull after landing.
 - **0.96" OLED** (on-board, I2C addr 0x3C): Shows flight state, sensor status, battery voltage, arm status on the pad before launch. Blank during flight to save power.
 
 ### Propulsion
@@ -49,9 +50,9 @@ SPARC (Student Propulsive Autonomous Rocketry Challenge) is a CO₂-powered rock
 ### Actuators Summary
 | Servo | Purpose | Pin | Range |
 |-------|---------|-----|-------|
-| MG996R | Ball valve throttle | D9 | 0°-90° (closed-open) |
-| MG90S #1 | TVC pitch | D5 | 78°-102° (±12° from center) |
-| MG90S #2 | TVC yaw | D6 | 78°-102° (±12° from center) |
+| MG996R | Ball valve throttle | GPIO 47 | 0°-90° (closed-open) |
+| MG90S #1 | TVC pitch | GPIO 48 | 78°-102° (±12° from center) |
+| MG90S #2 | TVC yaw | GPIO 3 | 78°-102° (±12° from center) |
 
 ### Power
 - **2S 7.4V 1000mAh LiPo** — powers everything
@@ -59,8 +60,8 @@ SPARC (Student Propulsive Autonomous Rocketry Challenge) is a CO₂-powered rock
 - No boost converter needed
 
 ### Data Logging
-- **Micro SD card module** on SPI
-- Log at 50Hz: timestamp, alt_baro, alt_tof, accel_xyz, gyro_xyz, pitch, roll, throttle_servo, tvc_pitch_servo, tvc_yaw_servo, state, co2_estimate
+- **No SD card** — there are not enough usable GPIOs on the Heltec V3 for SD (4 SPI pins) plus 3 servos + button + buzzer + battery ADC. All logging is done over WiFi instead.
+- Stream at 50Hz over WiFi/UDP: timestamp, alt_baro, alt_tof, accel_xyz, gyro_xyz, pitch, roll, throttle_servo, tvc_pitch_servo, tvc_yaw_servo, state, co2_estimate. A ground-station laptop records the stream to disk.
 
 ## Control Architecture
 
@@ -142,30 +143,31 @@ roll_fused = 0.98 * (roll_prev + gyro_y * dt) + 0.02 * roll_accel
 - TVC authority: ±12° gimbal → ~±3N lateral force at hover thrust
 
 ## Pin Assignments
+All pins below are physically broken out on the Heltec V3 headers and safe
+to use. The sensors share one I2C bus on GPIO 41 (SDA) / 42 (SCL).
+
 | Pin | Function |
 |-----|----------|
-| GPIO 2 | Arm/launch push button (INPUT_PULLUP, latching switch) |
-| GPIO 12 | Buzzer |
-| GPIO 13 | Status LED |
-| GPIO 26 | TVC pitch servo PWM |
-| GPIO 33 | TVC yaw servo PWM |
-| GPIO 25 | Throttle servo PWM (ball valve) |
-| GPIO 47 | SD card CS |
-| GPIO 10 | SD MOSI (HSPI) |
-| GPIO 11 | SD MISO (HSPI) |
-| GPIO 9 | SD SCK (HSPI) |
 | GPIO 41 | I2C SDA (BMP388 + MPU6050 + VL53L1X) |
-| GPIO 42 | I2C SCL |
+| GPIO 42 | I2C SCL (BMP388 + MPU6050 + VL53L1X) |
+| GPIO 47 | Throttle servo PWM (ball valve, MG996R) |
+| GPIO 48 | TVC pitch servo PWM (MG90S #1) |
+| GPIO 3 | TVC yaw servo PWM (MG90S #2) |
+| GPIO 2 | Arm/launch push button (INPUT_PULLUP, latching switch) |
+| GPIO 19 | Buzzer |
+| GPIO 20 | Status LED |
 | GPIO 1 | Battery voltage divider (ADC, with resistor divider 2S→3.3V range) |
-| — | LoRa SX1262: on-board, uses internal SPI (GPIO 8/9/10 reserved by Heltec) |
-| — | OLED SSD1306: on-board, I2C addr 0x3C (shares I2C bus with sensors) |
+| GPIO 26 | Spare (available; freed because LoRa is unused) |
+| — | OLED SSD1306: on-board (SDA_OLED, SCL_OLED, RST_OLED — defined by the Heltec BSP); I2C addr 0x3C on Wire1 |
 
-**Important Heltec V3 pin notes:**
-- GPIO 8, 9, 10 are used internally by the SX1262 LoRa — do NOT assign to other functions
-- GPIO 36, 37 are used by the OLED RST/display — do NOT assign
-- Use HSPI (not VSPI) for the SD card to avoid conflicts with on-board LoRa SPI
-- All servo pins must be on channels that support LEDC PWM (most GPIO work)
-- 3.3V logic: servos need 5V power from BEC but accept 3.3V signal (MG996R and MG90S both work with 3.3V signal)
+**Important Heltec V3 (ESP32-S3FN8) pin notes:**
+- GPIO 6, 7 are the module's SPI flash — reassigning them crashes the MCU. NEVER use.
+- GPIO 26–32 are the SPI-flash interface (26 = SPICS1, usable as a spare only because this module has no PSRAM). Treat 27–32 as off-limits.
+- GPIO 8, 9, 10, 11, 12, 13, 14 are the on-board SX1262 LoRa SPI — not broken out, not used.
+- GPIO 0, 45, 46 are strapping/boot pins — avoid for external hardware.
+- OLED uses the BSP's SDA_OLED / SCL_OLED / RST_OLED macros — do NOT assign those GPIOs to anything else.
+- All servo pins must be on channels that support LEDC PWM (most GPIO work).
+- 3.3V logic: servos need 5V power from BEC but accept 3.3V signal (MG996R and MG90S both work with 3.3V signal).
 
 ## Build & Test Philosophy
 1. **Breadboard first** — all development on solderless breadboard
@@ -176,6 +178,53 @@ roll_fused = 0.98 * (roll_prev + gyro_y * dt) + 0.02 * roll_accel
 6. **TVC bench test** — gimbal range of motion, servo response, pushrod travel
 7. **Tethered flight** — fishing line to stake, 5ft limit
 8. **Free flight** — start with short hops, increment to full hover attempts
+
+## Commit & Push Guidelines
+
+Commits follow the [Conventional Commits](https://www.conventionalcommits.org)
+standard so history stays machine-readable and consistent.
+
+**Subject line:** `type(scope): summary`
+- **type** — one of: `feat` (new capability), `fix` (bug fix), `refactor`
+  (behavior-preserving restructure), `perf`, `docs`, `test`, `build` (PlatformIO/
+  toolchain/deps), `chore` (housekeeping).
+- **scope** — the module touched, matching the `lib/` layout: `sensors`, `fusion`,
+  `display`, `wifi_link`, `pid`, `tvc`, `state`, `safety`, or `main`. Omit if the
+  change is genuinely cross-cutting.
+- **summary** — imperative mood, lower-case, no trailing period, ≤ 72 chars
+  ("add VL53L1X tilt correction", not "added" or "adds").
+
+**Body (required when the change is more than a one-liner):**
+- Describe the change against **the entire staged diff** — every file and concern
+  it touches, not just the headline. If one commit spans multiple modules, cover
+  each. Run `git diff --staged` and summarize what actually changed before writing.
+- Explain the **why**, not just the what — the reasoning, the tradeoff, the bug's
+  root cause. Wrap at ~72 chars. Use `-` bullets for distinct changes.
+- Note hardware-affecting changes explicitly (pin reassignments, I2C bus, power
+  rails) since they gate bring-up.
+
+**Footer:** reference issues (`Refs #12`) and breaking changes (`BREAKING CHANGE:`)
+when applicable.
+
+**Process:**
+- Commit and push only when explicitly asked.
+- Never commit directly to `main` — branch first (`feature/…`, `fix/…`).
+- Confirm the tree builds (`pio run`) before committing firmware changes.
+- One logical change per commit; don't bundle unrelated work.
+
+Example:
+```
+feat(fusion): add complementary-filter attitude estimator
+
+The accel-only tilt was corrupted by thrust during powered flight and
+gave only an unsigned tilt magnitude, unusable for the two-axis TVC PID.
+
+- add lib/fusion/attitude with gyro+accel complementary filter (ALPHA 0.98),
+  outputting signed pitch/roll seeded from the accelerometer
+- main: compute loop dt, run the filter on fresh IMU samples, drop the old
+  pitchDeg(), tilt-correct the ToF range with cos(pitch)·cos(roll)
+- serial telemetry now reports pitch and roll
+```
 
 ## Libraries (PlatformIO)
 ```ini
@@ -190,11 +239,11 @@ lib_deps =
     adafruit/Adafruit MPU6050
     adafruit/Adafruit Unified Sensor
     pololu/VL53L1X
-    arduino-libraries/SD
     madhephaestus/ESP32Servo
-    sandeepmistry/LoRa
     thingpulse/ESP8266 and ESP32 OLED driver for SSD1306 displays
 ```
+WiFi is built into the ESP32 Arduino framework — no library needed. SD and
+LoRa libraries were removed (no SD card; LoRa radio left disabled).
 
 ## File Structure
 ```
@@ -210,8 +259,8 @@ sparc/
 │       ├── fusion/            (complementary filter for alt + attitude)
 │       ├── pid/               (dual PID: throttle + TVC)
 │       ├── actuator/          (throttle servo + TVC gimbal servos)
-│       ├── logger/            (SD card CSV logging)
-│       ├── telemetry/         (LoRa downlink)
+│       ├── display/           (on-board OLED status screens)
+│       ├── wifi_link/         (WiFi SoftAP + UDP telemetry/logging)
 │       └── safety/            (cutoff checks)
 ├── simulation/
 │   ├── sparc_sim.m            (single-axis throttle sim)
@@ -240,3 +289,6 @@ sparc/
 6. Added flexible PTFE hose between fixed valve and moving nozzle to enable TVC
 7. Upgraded from Arduino Nano to Nano Every for more PWM pins and memory
 8. Added LoRa telemetry for real-time flight monitoring
+9. Moved to the Heltec WiFi LoRa 32 V3 (ESP32-S3) as the flight computer
+10. Dropped the SD card — freed 4 SPI pins; flight data now streams over WiFi
+11. Left the LoRa radio disabled and moved telemetry to a WiFi SoftAP, freeing GPIO 19/20/26 for buzzer/LED/spare

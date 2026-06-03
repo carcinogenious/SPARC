@@ -176,30 +176,31 @@ Brass Pipe Cap Nozzle (2.0-2.5mm drilled orifice, mounted in TVC gimbal)
 | GPIO | Function |
 |------|----------|
 | 2 | Arm/launch push button (latching, INPUT_PULLUP) |
-| 12 | Buzzer |
-| 13 | Status LED |
-| 25 | Throttle servo PWM (MG996R → ball valve) |
-| 26 | TVC pitch servo PWM (MG90S) |
-| 33 | TVC yaw servo PWM (MG90S) |
-| 41 | I2C SDA (BMP388 + MPU6050 + VL53L1X) |
-| 42 | I2C SCL |
-| 47 | SD card CS (HSPI) |
-| 10 | SD MOSI |
-| 11 | SD MISO |
-| 9 | SD SCK |
+| 38 | Buzzer |
+| 37 | Status LED |
+| 5 | Throttle servo PWM (MG996R → ball valve) |
+| 4 | TVC pitch servo PWM (MG90S) |
+| 3 | TVC yaw servo PWM (MG90S) |
+| 7 | I2C SDA (BMP388 + MPU6050 + VL53L1X) |
+| 6 | I2C SCL |
+| 34 | SD card CS |
+| 48 | SD card MOSI |
+| 47 | SD card MISO |
+| 33 | SD card SCK |
 | 1 | Battery voltage divider (ADC) |
 
-**Reserved pins (Heltec internal — do not use):**
-- GPIO 8, 9, 10: SX1262 LoRa SPI
-- GPIO 36, 37: OLED RST/display
+**Reserved pins (Heltec V3 internal / not exposed — do not use):**
+- GPIO 8, 9, 10, 11, 12, 13, 14: SX1262 LoRa internal wiring
+- GPIO 41, 42: not broken out on the V3 headers
+- SDA_OLED / SCL_OLED / RST_OLED: on-board OLED pins (Heltec BSP)
 
 ### Servo Summary
 
 | Servo | Purpose | Pin | Range | Torque |
 |-------|---------|-----|-------|--------|
-| MG996R | Ball valve throttle | GPIO 25 | 0°-90° | 12 kg·cm @ 6V |
-| MG90S #1 | TVC pitch | GPIO 26 | 78°-102° (±12°) | 2 kg·cm |
-| MG90S #2 | TVC yaw | GPIO 33 | 78°-102° (±12°) | 2 kg·cm |
+| MG996R | Ball valve throttle | GPIO 5 | 0°-90° | 12 kg·cm @ 6V |
+| MG90S #1 | TVC pitch | GPIO 4 | 78°-102° (±12°) | 2 kg·cm |
+| MG90S #2 | TVC yaw | GPIO 3 | 78°-102° (±12°) | 2 kg·cm |
 
 ---
 
@@ -296,10 +297,10 @@ roll  = 0.98 * (roll_prev  + gyro_y * dt) + 0.02 * atan2(accel_y, sqrt(accel_x²
 ## 6. Build & Testing Procedures
 
 ### Phase 1: Sensor Validation (breadboard)
-1. Wire BMP388 + MPU6050 + VL53L1X to Heltec ESP32 on breadboard (I2C: GPIO 41/42)
+1. Wire BMP388 + MPU6050 + VL53L1X to Heltec ESP32 on breadboard (I2C: SDA=GPIO 7, SCL=GPIO 6)
 2. Verify each sensor individually on Serial Monitor
 3. Confirm I2C addresses: BMP388=0x76, MPU6050=0x68, VL53L1X=0x29, OLED=0x3C
-4. Add SD card module (HSPI: CS=47, MOSI=10, MISO=11, SCK=9)
+4. Add SD card module (CS=34, MOSI=48, MISO=47, SCK=33)
 5. Verify 50Hz CSV logging to SD card
 
 ### Phase 2: MATLAB Simulation
@@ -310,8 +311,8 @@ roll  = 0.98 * (roll_prev  + gyro_y * dt) + 0.02 * atan2(accel_y, sqrt(accel_x²
 5. Record final gains → paste into firmware constants
 
 ### Phase 3: Servo & Actuator Testing (breadboard)
-1. Connect MG996R to GPIO 25, verify 0-90° sweep
-2. Connect MG90S ×2 to GPIO 26/33, verify ±12° from center (78°-102°)
+1. Connect MG996R to GPIO 5, verify 0-90° sweep
+2. Connect MG90S ×2 to GPIO 4/3, verify ±12° from center (78°-102°)
 3. Wire 2S LiPo → BEC → breadboard, verify 5V stable under 3A peak servo load
 4. Test ball valve actuation: servo 0°=closed, 90°=open, verify smooth motion via linkage
 5. Test gimbal articulation: both axes sweep smoothly, pushrods don't bind
